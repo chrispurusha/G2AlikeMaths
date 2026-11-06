@@ -1,0 +1,10 @@
+.DS_Store
+build/
+build-*/
+
+# Python bytecode cache - build output
+__pycache__/
+*.pyc
+
+# Claude Code session files
+.claude/
