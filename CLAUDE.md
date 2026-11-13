@@ -18,8 +18,10 @@ uses the library.
 
 - **Public repo.** Describe what the engine does and how it was checked against the hardware. G2Alike's rules apply
   here unchanged.
-- `engine/` is a copy of G2Alike's engine, made by `./sync-from-g2alike`: fix the engine in G2Alike and sync, never
-  edit `engine/` by hand.
+- `engine/` is a copy of G2Alike's engine, made by `./sync-from-g2alike`. G2Alike is not touched from here; never
+  edit `engine/` by hand. What the library needs inside the engine goes in `additions/`, which the sync attaches to
+  the copy.
+- `make test` after every change; a new call gets a test in `tests/test_g2am.c`.
 - The API changes only with an entry in `Docs/exchange.md`, and an incompatible change bumps `G2AM_API_VERSION`.
 - After a change: update `Docs/status.md`, and `Docs/api.md` if usage changed.
 - Commits only when the maintainer asks.

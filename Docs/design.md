@@ -138,13 +138,20 @@ The engine moves into G2AlikeMaths for good, and G2Alike - application and plug-
 caller. That is when the engine's types are split from G2Alike's GUI state (§6) and the SynthLib headers go.
 Not part of v1.
 
-## 10. Open questions
+## 10. Settled (2026-11-13, exchange.md)
 
-- **How the editor wants to call it**: a Node-API addon in the Electron main process, or inside (or beside) its C
-  daemon, driven over the same JSON stdin/stdout. The C API serves both; the choice decides who owns the audio
-  callback.
-- **Connector and parameter names** as well as indices: worth a shared table, or are indices enough?
-- **Performances** (four slots, keyboard ranges, the master clock): v1 or later? The engine already plays them.
-- **`g2am_load_patch()`: proposed for later.** The editor already parses `.pch2` itself and can build module by
-  module, and the reader brings SynthLib code with it (§6). Worth adding if building patch by patch proves slow
-  or awkward on the editor's side.
+- **The editor's daemon drives it**, from its own audio layer: `g2am_render()`; the device layer waits.
+- **Indices**, not names, for connectors and parameters.
+- **Performances in v1**, so the engine looks like a G2 to the editor.
+- **No `g2am_load_patch()`**: the daemon sends the commands that build a patch, as a batch.
+- **Platforms**: macOS, Windows, Linux, in that order.
+- **Addressing follows the wire further**: patch settings and morph knobs are area `"settings"` parameters, per
+  variation; morph ranges and uprate have calls of their own; variations run 0-9.
+
+## 11. Additions to the engine
+
+The engine stays in G2Alike, untouched from here. What the library needs that the engine does not offer is in
+`additions/soundEngineAdditions.c`, which `./sync-from-g2alike` appends to the COPY of `soundEngine.c`, so it reaches
+the engine's statics without G2Alike carrying it. So far: one slot's morph amount (the engine takes morph amounts only
+from controllers, never from the patch's knobs), and one slot's meters, LEDs and voice counts (the engine answers for
+the selected slot). When G2Alike moves onto the library (§9), these become the engine's own.

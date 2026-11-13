@@ -8,3 +8,6 @@ __pycache__/
 
 # Claude Code session files
 .claude/
+
+# Example output
+*.wav

@@ -1,0 +1,6 @@
+-std=gnu11
+-DSYNTHLIB_PLUGIN_BUILD
+-Iinclude
+-Iengine
+-Iengine/synthlib
+-Iadditions

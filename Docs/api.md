@@ -1,7 +1,7 @@
 # Using G2AlikeMaths
 
-Step by step, against the API in `include/g2alikemaths.h`. **Nothing is built yet** (see `status.md`); this is
-written against the draft API, so the calls are exact but untested. Every call returns 0 on success and a negative
+Step by step, against the API in `include/g2alikemaths.h`. See `status.md` for what is built and tested; every
+example here is exercised by `tests/test_g2am.c`. Every call returns 0 on success and a negative
 number on failure, with the reason in `g2am_last_error()`; the examples check that once, in `check()`.
 
 ## 1. Addressing - the same as the patch file
@@ -9,13 +9,13 @@ number on failure, with the reason in `g2am_last_error()`; the examples check th
 | What | How it is given | Example |
 |---|---|---|
 | Slot | 0-3 for A-D | `0` |
-| Area | `"voice"` or `"fx"` | `"voice"` |
-| Module | its index in the patch, 1-255, chosen by the caller | `3` |
+| Area | `"voice"`, `"fx"`, or `"settings"` for the patch settings (location 2) | `"voice"` |
+| Module | its index in the patch, 1-127, chosen by the caller; in `"settings"` the setting, 1-7 | `3` |
 | Module type | the G2's short name | `"OscB"`, `"EnvADSR"`, `"2-Out"` |
 | Connector | its index among the module's inputs, or among its outputs, as the `.pch2` stores it | OscB's `Out` is output 0 |
 | Parameter | its index in the module, as the `.pch2` stores it | OscB's `FreqCoarse` is 0 |
 | Mode | its index among the module's modes | |
-| Variation | 0-7 | `0` |
+| Variation | 0-9: 0-7 on the panel, 8 the ninth, 9 the Mutator's; a patch plays 0-8 | `0` |
 | Value | the G2's own: 0-127, or 0..n-1 for a list | `64` |
 
 A cable runs from an output to an input, or from an input to another input (a chain, as the G2 allows). The
@@ -83,13 +83,42 @@ check(e, g2am_commit(e));
 The value is the G2's 0-127, exactly what the editor sends the G2. Committing after every movement is fine: a
 commit costs the same for one change as for a hundred.
 
-Variations: set a parameter in any of the eight; which one plays is a patch setting.
+Variations: set a parameter in any of them; which one plays is a patch setting.
 
 ```c
 check(e, g2am_patch_setting(e, 0, "variation", 3));
 ```
 
-Morphs: `g2am_morph(e, slot, group, value)` moves a morph group's knob, 0-127.
+Patch settings are parameters too, per variation, in area `"settings"`, exactly as the wire addresses them: module
+1 is the morphs (parameters 0-7 the eight knobs, 8-15 their modes), 2 Volume, 3 Glide, 4 Bend, 5 Vibrato,
+6 Arpeggiator, 7 Octave shift and Sustain. What is not per variation - `"voices"`, `"mono_poly"`, `"variation"` -
+goes through `g2am_patch_setting()`.
+
+Morphs: a range on the parameter, then the group's knob.
+
+```c
+check(e, g2am_morph_range(e, 0, "voice", 2, 0, 0, 7, 12));   // OscB Coarse +12 under group 7, variation 0
+check(e, g2am_param_set(e, 0, "settings", 1, 7, 0, 127));    // group 7's knob, full: an octave up
+check(e, g2am_commit(e));
+```
+
+The range is the wire's byte: a signed 8-bit offset, 1-127 up, 128-255 down (from 256), 0 none.
+
+Uprate, as the editor works it out and sends it to a G2: `g2am_module_uprate(e, slot, area, module, 1)`. The graph
+runs at 96 kHz, and a control-rate module ticks at 24 kHz unless uprated, as on the G2.
+
+## 4a. A performance
+
+```c
+check(e, g2am_performance_setting(e, "mode", 1));
+check(e, g2am_performance_setting(e, "keyboard_range", 1));
+check(e, g2am_performance_setting(e, "enabled_b", 1));
+check(e, g2am_performance_setting(e, "keyboard_b", 1));
+check(e, g2am_performance_setting(e, "range_high_a", 59));
+check(e, g2am_performance_setting(e, "range_low_b", 60));
+```
+
+Performance settings apply at once, without a commit. The names are listed in the header.
 
 ## 5. Play it
 
@@ -98,8 +127,9 @@ Morphs: `g2am_morph(e, slot, group, value)` moves a morph group's knob, 0-127.
 const uint8_t note_on[] = {0x90, 60, 100};
 check(e, g2am_midi(e, note_on, sizeof note_on, 0));
 
-// Or straight to a slot, whatever its channel; velocity 0 is the note-off
-check(e, g2am_note(e, 0, 60, 0, 0));
+// Or as the G2's own keyboard plays (an editor's PLAY_NOTE): the selected slot, or the performance's keyboard
+// slots. Velocity 0 is the note-off
+check(e, g2am_note(e, 60, 0, 0));
 ```
 
 From the audio thread, the last argument places the event within the next block, in frames. From any other thread
@@ -174,3 +204,9 @@ grey those out.
 ```c
 g2am_destroy(e);   // closes the audio device too, if the library opened it
 ```
+
+## 10. Tests
+
+`make test` builds `tests/test_g2am.c` against the public header only and runs it: it builds patches, renders
+offline and checks what it hears (that a note sounds at its pitch and stops, that MIDI lands at its frame offset,
+morph ranges, variations, a performance's split) and that bad arguments are refused with a reason.

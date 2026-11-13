@@ -1,0 +1,76 @@
+#!/bin/bash
+#
+# Copies G2Alike's sound engine into engine/, read-only: G2Alike is not changed. Never edit engine/ by hand;
+# what the library adds to the engine lives in additions/ and is attached to the copy here. engine/VERSION records which G2Alike commit it came from.
+#
+#   ./sync-from-g2alike [path to G2Alike]     default: ../G2Alike
+
+set -e
+set -u
+set -o pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+G2="$(cd "${1:-$HERE/../G2Alike}" && pwd)"
+SL="$(cd "$G2/../SynthLib" && pwd)"
+OUT="$HERE/engine"
+
+# The headless engine: the same list as G2Alike's tools/do-render, which proves it links with no GUI
+SOURCES=(
+    soundEngine.c paramCurves.c waveModels.c nordSample.c dataBase.c globalVars.c cableChain.c
+    moduleResourcesAccess.c patchParamsResources.c noteStack.c
+)
+
+# Their header closure (cc -M), plus constData.h for the module short names
+HEADERS=(
+    audioOutput.h cableChain.h constData.h dataBase.h defs.h globalVars.h midiInput.h moduleResources.h
+    moduleResourcesAccess.h msgQueue.h nordSample.h noteStack.h paramCurves.h patchParamsResources.h
+    renderParams.h soundEngine.h splitView.h sysIncludes.h topbarControls.def types.h waveModels.h
+)
+
+# Headers only, no SynthLib code: types the engine's headers name (design.md §6)
+SYNTHLIB_HEADERS=(
+    floatingPanel.h geometry.h synthlibDefs.h synthlibGlobals.h synthlibQueue.h synthlibTypes.h
+)
+
+rm -rf "$OUT"
+mkdir -p "$OUT/synthlib"
+
+for f in "${SOURCES[@]}" "${HEADERS[@]}"; do
+    cp "$G2/src/$f" "$OUT/$f"
+done
+
+cp "$G2/plugin/g2HostIo.c" "$OUT/g2HostIo.c"
+
+# G2AlikeMaths' own additions, which need the engine's statics: appended to the copy, never to G2Alike
+printf '\n#include "../additions/soundEngineAdditions.c"\n' >> "$OUT/soundEngine.c"
+
+for f in "${SYNTHLIB_HEADERS[@]}"; do
+    cp "$SL/src/$f" "$OUT/synthlib/$f"
+done
+
+# Each module's verdict, from the evidence table behind G2Alike's Docs/engine-module-status.md:
+# {"Osc B", 0}, one line per module, the number being the state (0 confirmed .. 4 no sound)
+awk '
+    /^static const tEvidence kEvidence\[\] = \{/ { on = 1; next }
+    on && /^\};/                                  { exit }
+    on && /^[[:space:]]*\{"/ {
+        match($0, /\{"[^"]*"/)
+        name = substr($0, RSTART + 1, RLENGTH - 1)
+        rest = substr($0, RSTART + RLENGTH)
+        sub(/^[[:space:]]*,[[:space:]]*/, "", rest)
+        split(rest, parts, /[[:space:],]/)
+        state = parts[1]
+        n = (state == "eConfirmed") ? 0 : (state == "eModelled") ? 1 : (state == "eApproximate") ? 2 \
+          : (state == "ePartial") ? 3 : (state == "eNoSound") ? 4 : -1
+        if (n >= 0) printf "    {%s, %d},\n", name, n
+    }
+' "$G2/tools/modulestatus.c" > "$OUT/moduleStatus.inc"
+
+{
+    echo "G2Alike $(git -C "$G2" describe --tags --always --dirty 2>/dev/null || echo unknown)"
+    echo "commit $(git -C "$G2" rev-parse HEAD 2>/dev/null || echo unknown)"
+    echo "SynthLib headers $(git -C "$SL" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    echo "synced $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+} > "$OUT/VERSION"
+
+echo "engine/ synced from $G2 ($(head -1 "$OUT/VERSION")), $(wc -l < "$OUT/moduleStatus.inc" | tr -d ' ') module verdicts"

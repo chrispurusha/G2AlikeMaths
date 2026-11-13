@@ -32,7 +32,9 @@ detail; this is the whole agreement in one place. A change to anything here is p
 - `g2am_midi()` and `g2am_note()` from either.
 
 **Addressing**
-- Module indices chosen by the caller, unique within a slot's area, 1-255 as in a patch.
+- Module indices chosen by the caller, unique within a slot's area, 1-127 as in a patch.
+- Variations 0-9 for anything stored per variation; a patch plays 0-8.
+- The uprate bit, as the caller would send it to a G2. The library does not work it out.
 - Cables that exist on the G2: from an output to an input, or an input to an input. The library refuses others.
 - `frames` no larger than `max_frames`; `g2am_prepare()` when the device's rate or block size changes.
 

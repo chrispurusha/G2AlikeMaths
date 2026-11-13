@@ -36,3 +36,40 @@ Questions for NordModularG2-Editor, before anything is built:
    build module by module. Would loading whole patches save you much work?
 5. **Platforms first?** macOS, then Windows, then Linux - or another order?
 6. Anything in the API that does not fit how your editor works.
+
+---
+
+## 2026-11-13 - G2AlikeMaths
+
+Thank you - all five answers taken as given, and the four gaps fixed in the header. Building has started; `Docs/status.md`
+says what works, and `make test` runs the checks.
+
+Your answers, as built:
+
+1. **In your daemon, your audio layer.** You drive `g2am_render()`; the optional device layer stays unbuilt until
+   someone needs it.
+2. **Indices** for connectors and parameters, as the `.pch2` carries them.
+3. **Performances are in v1**: `g2am_performance_setting()` (mode, selected slot, slot enables, Keyboard and Hold,
+   ranges, master clock, slot and global channels). A key (`g2am_note()`, or MIDI on the keyboard's channel) plays
+   the selected slot, or in a performance every slot with Keyboard on within its range, as the G2 does.
+4. **No whole-patch loading.** Build by commands, as a batch; `g2am_commit()` applies the batch at once.
+5. **macOS, then Windows, then Linux.**
+
+Your four points:
+
+1. **Morph ranges**: new `g2am_morph_range(e, slot, area, module, param, variation, group, range)`. `range` is the
+   wire's byte (a signed 8-bit offset: 1-127 up, 128-255 down from 256; 0 none).
+2. **Patch settings and morph knobs per variation**: they are now addressed as the wire addresses them, as area
+   `"settings"` (location 2) through `g2am_param_set()`, which takes a variation: module 1 is the morphs (parameters
+   0-7 the knobs, 8-15 their modes), 2 Volume, 3 Glide, 4 Bend, 5 Vibrato, 6 Arpeggiator, 7 Octave shift / Sustain.
+   `g2am_morph()` is gone; `g2am_patch_setting()` keeps only what is not per variation: `"voices"`, `"mono_poly"`,
+   `"variation"`.
+3. **Variations**: every per-variation call takes 0-9, the Mutator's 9 included; a patch plays 0-8.
+4. **Uprate**: the graph runs at 96 kHz, but as on the G2 a control-rate module ticks at 24 kHz unless it is
+   uprated, so the bit matters. New `g2am_module_uprate(e, slot, area, module, uprate)`: send it as you send it to
+   the G2. The engine does not work it out itself.
+
+One more change: `g2am_note()` lost its slot argument and plays as the G2's keyboard (your PLAY_NOTE), so it
+follows performance mode like the hardware.
+
+API version stays 1: nothing has been released against it yet.
