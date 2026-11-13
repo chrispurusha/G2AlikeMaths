@@ -359,6 +359,70 @@ static void test_performance(void) {
     g2am_destroy(e);
 }
 
+// Renders with a 440 Hz sine of amplitude 0.25 on In 1 and In 2; Out 1 into buf
+static void render_with_input(g2am_engine * e, float * buf, int frames) {
+    float right[BLOCK];
+    float sine[BLOCK];
+    static long phase;
+
+    for (int done = 0; done < frames; done += BLOCK) {
+        int           n      = (frames - done < BLOCK) ? (frames - done) : BLOCK;
+        float *       out[2] = {buf + done, right};
+        const float * in[2]  = {sine, sine};
+
+        for (int i = 0; i < n; i++, phase++) {
+            sine[i] = 0.25f * (float)sin(2.0 * M_PI * 440.0 * (double)phase / RATE);
+        }
+        g2am_render(e, in, 2, out, 2, n);
+    }
+}
+
+static void test_fx_input(void) {
+    printf("the G2's In 1/2 through the FX area\n");
+    g2am_engine * e      = make_engine(0);
+    int           frames = SECONDS(1.0);
+    float *       buf    = calloc((size_t)frames, sizeof(float));
+
+    OK(e, g2am_module_add(e, 0, "fx", 1, "2-In"));
+    OK(e, g2am_module_add(e, 0, "fx", 3, "2-Out"));
+    OK(e, g2am_cable_add(e, 0, "fx", 1, 0, 1, 3, 0));
+    OK(e, g2am_cable_add(e, 0, "fx", 1, 1, 1, 3, 1));
+
+    double gain[4] = {0};
+
+    for (int pad = 0; pad < 4; pad++) {
+        OK(e, g2am_param_set(e, 0, "fx", 1, 2, 0, pad));
+        OK(e, g2am_commit(e));
+        render_with_input(e, buf, frames);
+        gain[pad] = rms(buf + SECONDS(0.5), SECONDS(0.5)) / (0.25 / sqrt(2.0));
+        printf("  2-In Pad %d: gain %.3f (%+.1f dB)\n", pad, gain[pad], 20.0 * log10(gain[pad] + 1e-12));
+    }
+
+    CHECK(gain[0] > 0.1, "the input does not reach the output: gain %g", gain[0]);
+
+    // A Phaser between them: the input changes
+    OK(e, g2am_module_add(e, 0, "fx", 2, "Phaser"));
+    OK(e, g2am_cable_remove(e, 0, "fx", 1, 0, 1, 3, 0));
+    OK(e, g2am_cable_add(e, 0, "fx", 1, 0, 1, 2, 0));
+    OK(e, g2am_cable_add(e, 0, "fx", 2, 0, 1, 3, 0));
+    OK(e, g2am_param_set(e, 0, "fx", 2, 2, 0, 100));   // FB
+    OK(e, g2am_commit(e));
+    render_with_input(e, buf, frames);
+
+    double lo = 1e9, hi = 0.0;
+
+    for (int w = 0; w < 10; w++) {
+        double r = rms(buf + SECONDS(0.5) + (w * SECONDS(0.05)), SECONDS(0.05));
+
+        lo = (r < lo) ? r : lo;
+        hi = (r > hi) ? r : hi;
+    }
+    printf("  Phaser: level over 0.5 s from %.4f to %.4f\n", lo, hi);
+    CHECK(hi > 0.01, "the Phaser passes nothing");
+    free(buf);
+    g2am_destroy(e);
+}
+
 static void test_module_list(void) {
     printf("the module list and verdicts\n");
     g2am_engine * e = make_engine(0);
@@ -388,6 +452,7 @@ int main(void) {
     test_morph_range();
     test_variations();
     test_performance();
+    test_fx_input();
     test_module_list();
     printf("%d checks, %d failed\n", sChecks, sFailures);
     return (sFailures == 0) ? 0 : 1;
