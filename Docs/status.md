@@ -2,7 +2,7 @@
 
 What is built and working. Updated with every change; when this and `api.md` disagree, this is right.
 
-**2026-11-13: the core is built and passes `make test`** (673 checks) on macOS. First user: AllAlike's ModAlike
+**2026-11-13: the core is built and passes `make test`** (679 checks) on macOS. First user: AllAlike's ModAlike
 (an effect plug-in: In 1/2 through the FX area). The engine is G2Alike V1.0.5's,
 copied by `./sync-from-g2alike` (`engine/VERSION`).
 
@@ -30,6 +30,6 @@ copied by `./sync-from-g2alike` (`engine/VERSION`).
 Known limits:
 
 - MIDI program change and CC 70 (variation select) are not acted on yet.
-- A turned morph knob and the controller for the same group (wheel, aftertouch, pedals) share one amount: the
-  last to move sets it, and a commit re-applies only the knobs that changed.
+- Morph groups follow their modes (settings parameters 8-15): Knob uses the knob, otherwise the controller. G.Wh1 and
+  G.Wh2 (CC 96/97) take effect at the next rebuild rather than at once.
 - `g2am_prepare()` must not run while the caller renders.

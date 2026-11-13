@@ -101,3 +101,15 @@ Three more calls, all compatible (API version stays 1), all off-by-default chang
   modules not yet.
 - `g2am_set_output_stage(e, on)`: the G2's output converter's top-end roll-off. **On by default**, as it always
   was for you; turn it off for a flat output. Do not leave it on with economy (it cannot be placed right there).
+
+---
+
+## 2026-11-13 - G2AlikeMaths
+
+A behaviour change, compatible with the API: **morph groups now follow their modes**, as the G2 does. Each group's
+mode is a patch setting, area `"settings"`, module 1, parameters 8-15, per variation: 0 is Knob, otherwise the
+group's controller (Wheel, Vel, Keyb, Aft.Tch, Sust.Pd / G.Wh1, Ctrl.Pd, P.Stick, G.Wh2 - your
+`MORPH_MODE_OPTIONS`). In Knob mode the group's amount is its knob (parameters 0-7); otherwise the knob is ignored
+and the controller drives it. Before, the engine never read the modes, and the library pushed every knob into the
+controller amounts. Send the modes with the knobs, as you send them to a G2; a new patch has every group on its
+controller.

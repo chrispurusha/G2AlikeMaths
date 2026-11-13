@@ -117,7 +117,6 @@ struct g2am_engine {
     tOp *            ops;
     size_t           opCount;
     size_t           opCapacity;
-    int              knobSent[MAX_SLOTS][NUM_MORPHS];   // notes §3 - the knob value last given the engine
     int              variationSeen[MAX_SLOTS];
 
     // notes §4 - MIDI and keys from any thread, placed by the next render
@@ -286,9 +285,6 @@ static void reset_shadow(g2am_engine * e, int slot) {
         }
     }
 
-    for (int g = 0; g < NUM_MORPHS; g++) {
-        e->knobSent[slot][g] = -1;
-    }
     e->variationSeen[slot] = 0;
 }
 
@@ -746,23 +742,6 @@ static void apply(g2am_engine * e, const tOp * op) {
     }
 }
 
-// notes §3 - each slot's morph knobs, in the variation it plays, where they moved since the last commit
-static void apply_morph_knobs(g2am_engine * e) {
-    for (uint32_t slot = 0; slot < MAX_SLOTS; slot++) {
-        tModule * morphs    = get_module_slot(slot, (uint32_t)locationMorph, (uint32_t)patchModuleMorph);
-        uint32_t  variation = gPatchDescr[slot].activeVariation % NUM_VARIATIONS_USB;
-
-        for (uint32_t group = 0; group < NUM_MORPHS; group++) {
-            int knob = morphs->param[variation][group].value;
-
-            if (knob != e->knobSent[slot][group]) {
-                g2am_engine_set_slot_morph(slot, group, (double)knob / 127.0);
-                e->knobSent[slot][group] = knob;
-            }
-        }
-    }
-}
-
 int g2am_commit(g2am_engine * e) {
     if (e == NULL) {
         return -1;
@@ -772,15 +751,9 @@ int g2am_commit(g2am_engine * e) {
     database_write_lock();
 
     for (size_t i = 0; i < e->opCount; i++) {
-        if (e->ops[i].kind == eOpClear) {
-            for (uint32_t g = 0; g < NUM_MORPHS; g++) {
-                e->knobSent[e->ops[i].slot][g] = -1;
-            }
-        }
         apply(e, &e->ops[i]);
     }
-    e->opCount = 0;
-    apply_morph_knobs(e);
+    e->opCount = 0;   // notes §3 - morph knobs and modes are the engine's own business since G2Alike §26.4
     database_write_unlock();
     database_read_lock();
     sound_engine_update_from_patch();

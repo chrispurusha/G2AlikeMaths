@@ -5,9 +5,9 @@
    deterministic and the library starts no audio threads of its own.
 2. **`g2am_prepare()`** restarts the engine at the new rate and grows the scratch buffer. It frees memory the audio
    thread uses, so the caller must have stopped rendering.
-3. **Morph knobs.** The engine takes a morph group's amount from controllers only. At each commit the façade gives
-   each slot the knob values of the variation it plays, but only the knobs whose value changed since the last
-   commit, so a wheel already moved is not snapped back by an unrelated edit.
+3. **Morph knobs** are the engine's own since G2Alike's §26.4 (2026-11-13): each group follows its knob in Knob mode
+   (settings parameters 8-15) and its controller otherwise. The façade's earlier workaround - pushing knob values into
+   the controller amounts at each commit - went with it.
 4. **Events.** MIDI and keys from any thread go into a ring claimed with one atomic add and published by a sequence
    number, as the engine's own note queue does. Each render takes what is ready (up to 256), sorts it by frame
    offset keeping arrival order, and renders up to each offset before playing it. Events posted from a control

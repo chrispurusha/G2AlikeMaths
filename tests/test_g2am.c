@@ -286,7 +286,7 @@ static void test_midi_and_offset(void) {
 }
 
 static void test_morph_range(void) {
-    printf("a morph range moves a parameter as its knob turns\n");
+    printf("a morph range moves a parameter as its knob turns, in Knob mode only\n");
     g2am_engine * e = make_engine(0);
 
     build_voice(e, 0);
@@ -297,10 +297,20 @@ static void test_morph_range(void) {
 
     CHECK(fabs(cents(hz, 440.0)) < 5.0, "knob at 0: %.2f Hz, want 440", hz);
 
-    OK(e, g2am_param_set(e, 0, "settings", 1, 7, 0, 127));   // the eighth knob, full
+    OK(e, g2am_param_set(e, 0, "settings", 1, 7, 0, 127));   // the eighth knob, full - but the group follows G.Wh2
     OK(e, g2am_commit(e));
     hz = play_pitch(e, 69, NULL);
-    CHECK(fabs(cents(hz, 880.0)) < 5.0, "knob at 127: %.2f Hz, want 880", hz);
+    CHECK(fabs(cents(hz, 440.0)) < 5.0, "knob at 127 with the group on its controller: %.2f Hz, want 440", hz);
+
+    OK(e, g2am_param_set(e, 0, "settings", 1, 8 + 7, 0, 0));  // the group's mode: Knob
+    OK(e, g2am_commit(e));
+    hz = play_pitch(e, 69, NULL);
+    CHECK(fabs(cents(hz, 880.0)) < 5.0, "knob at 127 in Knob mode: %.2f Hz, want 880", hz);
+
+    OK(e, g2am_param_set(e, 0, "settings", 1, 7, 0, 64));    // half way: up six semitones
+    OK(e, g2am_commit(e));
+    hz = play_pitch(e, 69, NULL);
+    CHECK(fabs(cents(hz, 440.0 * pow(2.0, 6.0 / 12.0))) < 15.0, "knob at 64 in Knob mode: %.2f Hz, want ~622", hz);
     g2am_destroy(e);
 }
 

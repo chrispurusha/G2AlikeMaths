@@ -20,17 +20,6 @@
 // Included at the END of engine/soundEngine.c by ./sync-from-g2alike, so it reaches the engine's statics.
 // G2Alike's own copy of the engine knows nothing of it. Notes: Docs/code-notes/additions.md
 
-// notes §1 - one slot's morph group, from that slot's morph knob, whatever slots the keyboard plays
-bool g2am_engine_set_slot_morph(uint32_t slot, uint32_t group, double amount) {
-    int32_t was     = sEngineSlot;
-    bool    changed = false;
-
-    sEngineSlot = (int32_t)(slot % MAX_SLOTS);
-    changed     = set_morph_one(group, amount);
-    sEngineSlot = was;
-    return changed;
-}
-
 // notes §2 - the engine's own readouts, for one named slot rather than the selected one
 #define G2AM_ON_SLOT(slot, type, call) \
     int32_t was = sEngineSlot;          \

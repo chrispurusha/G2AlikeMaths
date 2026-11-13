@@ -2,8 +2,8 @@
 
 Appended to the copy of `soundEngine.c` by `./sync-from-g2alike`; see `design.md` §11.
 
-1. **One slot's morph.** `set_morph_one()` on the named slot's engine. The engine's own `sound_engine_set_morph()`
-   reaches only the slots the keyboard plays, which suits a controller but not a patch's knob.
+1. (Removed 2026-11-13: one slot's morph from its knob. The engine reads the knobs and their modes itself now,
+   G2Alike's reference §26.4.)
 2. **One slot's readouts.** Meters, LEDs and voice counts are read from the engine of the selected slot. Each
    wrapper points the thread at the named slot for the one call, the way the engine's own per-slot loops do.
 3. (Removed 2026-11-13: an oversampling query, replaced by `g2am_latency()` working from the requested setting.)
