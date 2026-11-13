@@ -46,7 +46,7 @@ PUBLIC := $(BUILD)/obj/g2alikemaths-public.o
 
 ifeq ($(UNAME),Darwin)
 $(PUBLIC): $(OBJ)
-	$(CC) $(ARCHS) -r -nostdlib -Wl,-exported_symbol,'_g2am_*' -o $@ $^
+	$(CC) $(ARCHS) -mmacosx-version-min=12.0 -r -nostdlib -Wl,-exported_symbol,'_g2am_*' -o $@ $^
 else
 $(PUBLIC): $(OBJ)
 	$(LD) -r -o $@.all $^
