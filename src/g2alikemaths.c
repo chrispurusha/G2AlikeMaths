@@ -109,6 +109,7 @@ struct g2am_engine {
     double           sampleRate;
     int              maxFrames;
     int              extensions;
+    int              economy;
     char             error[256];
 
     // CONTROL thread: what has been asked for, and the edits waiting for g2am_commit()
@@ -125,6 +126,15 @@ struct g2am_engine {
     uint32_t         eventRead;           // audio thread only
     tBlockEvent      block[G2AM_BLOCK_EVENTS];
     float *          scratch;             // interleaved, SOUND_ENGINE_OUT_CHANNELS wide
+
+    // notes §8 - an LFO link, posted by a control thread and made by the audio thread between blocks
+    struct {
+        uint32_t     slot, fromSlot, location, module;
+        double       offset;
+    }                link;
+    _Atomic uint32_t linkSeq;         // bumped once the request above is whole
+    uint32_t         linkSeen;        // audio thread: the request it is making
+    uint32_t         linkBlocks;      // audio thread: blocks it still re-makes it on
 
     // notes §5
     pthread_mutex_t  rebuildMutex;
@@ -1093,12 +1103,16 @@ static void render_span(g2am_engine * e, const float * const * in, int in_count,
     }
 }
 
+static void make_link(g2am_engine * e);
+
 void g2am_render(g2am_engine * e, const float * const * in, int in_count, float * const * out, int out_count, int frames) {
     if ((e == NULL) || (out == NULL) || (frames <= 0)) {
         return;
     }
     enter(e);
     out_count = (out_count < 0) ? 0 : ((out_count > 4) ? 4 : out_count);
+
+    make_link(e);
 
     uint32_t count = take_events(e, frames);
     int      pos   = 0;
@@ -1113,6 +1127,112 @@ void g2am_render(g2am_engine * e, const float * const * in, int in_count, float 
 
     if (pos < frames) {
         render_span(e, in, in_count, out, out_count, pos, frames - pos);
+    }
+}
+
+// ---- Latency and LFO links -----------------------------------------------------------------------------------
+
+#define G2AM_RESAMPLE_LATENCY    (31)   // notes §7 - measured; tests/test_g2am.c checks it at each rate
+
+#define G2AM_GRAPH_RATE_MIN      (88200.0)   // from here up the graph runs at the device's rate
+
+// notes §7 - from what was asked for, not what the audio thread has applied yet, so it is right at once
+int g2am_latency(const g2am_engine * e) {
+    if ((e == NULL) || e->economy || (e->sampleRate >= G2AM_GRAPH_RATE_MIN)) {
+        return 0;
+    }
+    return G2AM_RESAMPLE_LATENCY;
+}
+
+int g2am_set_fixed_point(g2am_engine * e, int on) {
+    if (e == NULL) {
+        return -1;
+    }
+
+    if ((on != 0) && (on != 1)) {
+        return fail(e, "fixed point %d: 0 or 1", on);
+    }
+    enter(e);
+    sound_engine_set_fixed_point(on != 0);
+    return ok(e);
+}
+
+int g2am_set_output_stage(g2am_engine * e, int on) {
+    if (e == NULL) {
+        return -1;
+    }
+
+    if ((on != 0) && (on != 1)) {
+        return fail(e, "output stage %d: 0 or 1", on);
+    }
+    enter(e);
+    sound_engine_set_dac_emulation(on != 0);
+    return ok(e);
+}
+
+int g2am_set_economy(g2am_engine * e, int on) {
+    if (e == NULL) {
+        return -1;
+    }
+
+    if ((on != 0) && (on != 1)) {
+        return fail(e, "economy %d: 0 or 1", on);
+    }
+    enter(e);
+    e->economy = on;
+    sound_engine_set_economy(on != 0);
+    return ok(e);
+}
+
+int g2am_lfo_link(g2am_engine * e, int slot, const char * area, int module, int from_slot, double offset) {
+    int location = 0;
+    int type     = check_module(e, slot, area, module, &location);
+
+    if (type < 0) {
+        return -1;
+    }
+
+    if (e->extensions == 0) {
+        return fail(e, "g2am_lfo_link is beyond the G2: turn extensions on to use it");
+    }
+
+    if ((from_slot < 0) || (from_slot >= MAX_SLOTS) || (from_slot == slot) || (e->shadow[from_slot][area_row(location)][module] != type)) {
+        return fail(e, "slot %d has no %s at %s module %d to follow", from_slot, g2am_type_name(type), area, module);
+    }
+
+    if ((type != (int)moduleTypePhaser) && (type != (int)moduleTypeFlanger)) {
+        return fail(e, "only a Phaser or Flanger has an LFO to link, not %s", g2am_type_name(type));
+    }
+
+    if ((offset < 0.0) || (offset > 1.0)) {
+        return fail(e, "offset %g: a fraction of a cycle, 0-1", offset);
+    }
+    e->link.slot     = (uint32_t)slot;
+    e->link.fromSlot = (uint32_t)from_slot;
+    e->link.location = (uint32_t)location;
+    e->link.module   = (uint32_t)module;
+    e->link.offset   = offset;
+    atomic_fetch_add(&e->linkSeq, 1u);   // published last; the next render takes it
+    return ok(e);
+}
+
+#define G2AM_LINK_BLOCKS    (8)   // notes §8 - made again on this many blocks, so a rebuild in between cannot lose it
+
+// AUDIO thread, between blocks: both slots stand at the same sample
+static void make_link(g2am_engine * e) {
+    uint32_t seq = atomic_load(&e->linkSeq);
+
+    if (seq != e->linkSeen) {
+        e->linkSeen   = seq;
+        e->linkBlocks = G2AM_LINK_BLOCKS;
+    }
+
+    if (e->linkBlocks == 0u) {
+        return;
+    }
+
+    if (g2am_engine_lfo_link(e->link.slot, e->link.fromSlot, e->link.location, e->link.module, e->link.offset)) {
+        e->linkBlocks--;   // a module not yet started counts nothing: the request waits for it
     }
 }
 

@@ -130,6 +130,32 @@ void g2am_all_notes_off(g2am_engine * e);
 // out: Out 1-4 in that order, out_count buffers (1-4). Not interleaved. Always filled, with silence if nothing plays.
 void g2am_render(g2am_engine * e, const float * const * in, int in_count, float * const * out, int out_count, int frames);
 
+// How many frames g2am_render()'s output trails its input: the resampling to and from the engine's 96 kHz, so
+// none at 88.2 kHz and above, or with economy on. Any thread; changes with g2am_prepare() and g2am_set_economy().
+int g2am_latency(const g2am_engine * e);
+
+// Economy (CONTROL): 1 runs the graph at the device's own rate below 88.2 kHz - no resampling, so no latency and
+// about half the work, but not the G2's rate: the parts with 96 kHz internals step twice a sample to stay close.
+// 0, the default, is the G2's 96 kHz. Applied between blocks; the patch's state is cleared, a moment's silence.
+int g2am_set_economy(g2am_engine * e, int on);
+
+// Fixed point (CONTROL): 1 stores the Phaser's, Chorus's and Flanger's words on the G2's own 24-bit step, so
+// their tails and feedback end as words do; 0, the default, keeps them in floating point. Other modules not yet.
+int g2am_set_fixed_point(g2am_engine * e, int on);
+
+// The G2's output stage (CONTROL): 1, the default, rolls the outputs off at the top as the G2's converter does (a
+// two-pole low-pass at 33.5 kHz); 0 leaves them flat. At a graph rate below 88.2 kHz (economy) it cannot be
+// placed right and cuts lower - turn it off there.
+int g2am_set_output_stage(g2am_engine * e, int on);
+
+// ---- Beyond the G2 (CONTROL) - only with extensions on -----------------------------------------------------------
+
+// Sets one module's internal LFO to the same module's in `from_slot`, plus `offset` of a cycle (0..1), so two
+// slots' copies run a fixed distance apart. A Phaser or Flanger, in the FX area. Made by the audio thread at the
+// start of the next blocks, once both have started; one link at a time - a second call replaces the first. The
+// sweep jumps when it is made.
+int g2am_lfo_link(g2am_engine * e, int slot, const char * area, int module, int from_slot, double offset);
+
 // ---- What the panel shows (CONTROL, polled) -------------------------------------------------------------------
 //
 // Values as the G2 reports them to an editor over USB, so an editor's existing meter and LED drawing serves.

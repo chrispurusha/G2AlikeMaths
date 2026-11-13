@@ -10,5 +10,6 @@ bool     g2am_engine_module_meter(uint32_t slot, uint32_t location, uint32_t ind
 bool     g2am_engine_module_led(uint32_t slot, uint32_t location, uint32_t index, uint32_t led, uint32_t * value);
 uint32_t g2am_engine_voice_count(uint32_t slot);
 uint32_t g2am_engine_voices_sounding(uint32_t slot);
+bool     g2am_engine_lfo_link(uint32_t toSlot, uint32_t fromSlot, uint32_t location, uint32_t index, double offset);
 
 #endif

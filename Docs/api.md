@@ -205,6 +205,15 @@ grey those out.
 g2am_destroy(e);   // closes the audio device too, if the library opened it
 ```
 
+## 9a. Engine options
+
+```c
+check(e, g2am_set_economy(e, 1));        // the device's rate below 88.2 kHz: no latency, not the G2's 96 kHz
+check(e, g2am_set_fixed_point(e, 1));    // the Phaser, Chorus and Flanger on the G2's 24-bit step
+check(e, g2am_set_output_stage(e, 0));   // flat outputs; on (the default) rolls the top off as the G2 does
+int frames_late = g2am_latency(e);       // 31 at 44.1/48 kHz, 0 at 88.2 kHz and above or with economy
+```
+
 ## 10. Tests
 
 `make test` builds `tests/test_g2am.c` against the public header only and runs it: it builds patches, renders

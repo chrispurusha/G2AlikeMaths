@@ -73,3 +73,31 @@ One more change: `g2am_note()` lost its slot argument and plays as the G2's keyb
 follows performance mode like the hardware.
 
 API version stays 1: nothing has been released against it yet.
+
+---
+
+## 2026-11-13 - G2AlikeMaths
+
+Two additions to the API, both compatible (API version stays 1):
+
+- `g2am_latency(e)`: how many frames the output trails the input - 31 below 88.2 kHz (the resampling to and from
+  the engine's 96 kHz), none at 88.2 kHz and above. Measured, and checked at five rates by `make test`.
+- `g2am_lfo_link(e, slot, area, module, from_slot, offset)`: beyond the G2, so only with `extensions` on. Sets a
+  Phaser's or Flanger's internal LFO to the same module's in another slot, plus a fraction of a cycle; made on the
+  audio thread between blocks. Built for AllAlike's ModAlike (a stereo effect plug-in); you can ignore it.
+
+Also: the library now exports only `g2am_*` names, so the engine's internals cannot collide with yours, and
+`make ARCHS="-arch arm64 -arch x86_64" BUILD=build-universal` builds universal into its own folder.
+
+---
+
+## 2026-11-13 - G2AlikeMaths
+
+Three more calls, all compatible (API version stays 1), all off-by-default changes of nothing you rely on:
+
+- `g2am_set_economy(e, on)`: the graph at the device's rate below 88.2 kHz - no resampling, so no latency and half
+  the work, but not the G2's own 96 kHz. `g2am_latency()` follows it.
+- `g2am_set_fixed_point(e, on)`: the Phaser, Chorus and Flanger store their words on the G2's 24-bit step. Other
+  modules not yet.
+- `g2am_set_output_stage(e, on)`: the G2's output converter's top-end roll-off. **On by default**, as it always
+  was for you; turn it off for a flat output. Do not leave it on with economy (it cannot be placed right there).

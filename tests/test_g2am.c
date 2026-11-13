@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "g2alikemaths.h"
 
@@ -423,6 +424,217 @@ static void test_fx_input(void) {
     g2am_destroy(e);
 }
 
+static void test_latency(void) {
+    printf("latency, as reported and as measured\n");
+    double rates[] = {44100.0, 48000.0, 88200.0, 96000.0, 192000.0, 44100.0, 48000.0};
+
+    for (int r = 0; r < 7; r++) {   // the last two with economy on
+        g2am_config   c = {G2AM_API_VERSION, rates[r], BLOCK, 0};
+        g2am_engine * e = g2am_create(&c);
+        float         l[BLOCK], rr[BLOCK], in[BLOCK];
+        float *       out[2] = {l, rr};
+        const float * ins[2] = {in, in};
+        long          k = 0, at = -1;
+        double        best = 0.0;
+
+        OK(e, g2am_module_add(e, 0, "fx", 1, "2-In"));
+        OK(e, g2am_module_add(e, 0, "fx", 3, "2-Out"));
+        OK(e, g2am_param_set(e, 0, "fx", 1, 2, 0, 0));
+        OK(e, g2am_cable_add(e, 0, "fx", 1, 0, 1, 3, 0));
+        OK(e, g2am_set_economy(e, (r >= 5) ? 1 : 0));
+        OK(e, g2am_commit(e));
+
+        // a change of rate clears the patch's state through the library's worker, every 4 ms: let it, as real
+        // time would, before measuring
+        for (int settle = 0; settle < 5; settle++) {
+            g2am_render(e, NULL, 0, out, 2, BLOCK);
+            usleep(10000);
+        }
+
+        for (int b = 0; b < 60; b++) {
+            for (int i = 0; i < BLOCK; i++, k++) {
+                in[i] = (k == 5000) ? 1.0f : 0.0f;
+            }
+            g2am_render(e, ins, 2, out, 2, BLOCK);
+
+            for (int i = 0; i < BLOCK; i++) {
+                if (fabs(l[i]) > best) {
+                    best = fabs(l[i]);
+                    at   = ((long)b * BLOCK) + i - 5000;
+                }
+            }
+        }
+
+        CHECK(at == g2am_latency(e), "%.0f Hz%s: measured %ld, reported %d", rates[r], (r >= 5) ? " economy" : "", at, g2am_latency(e));
+        g2am_destroy(e);
+    }
+}
+
+// Mean |L - R| over a take, with In 1/2 carrying the same sine
+static double side_difference(g2am_engine * e) {
+    int     frames = SECONDS(0.5);
+    float * left   = calloc((size_t)frames, sizeof(float));
+    float * right  = calloc((size_t)frames, sizeof(float));
+    float   sine[BLOCK];
+    static long phase;
+    double  sum = 0.0;
+
+    for (int done = 0; done < frames; done += BLOCK) {
+        float *       out[2] = {left + done, right + done};
+        const float * in[2]  = {sine, sine};
+
+        for (int i = 0; i < BLOCK; i++, phase++) {
+            sine[i] = 0.25f * (float)sin(2.0 * M_PI * 440.0 * (double)phase / RATE);
+        }
+        g2am_render(e, in, 2, out, 2, BLOCK);
+    }
+
+    for (int i = frames / 2; i < frames; i++) {
+        sum += fabs((double)left[i] - right[i]);
+    }
+    free(left);
+    free(right);
+    return sum / (frames / 2);
+}
+
+static void test_lfo_link(const char * type) {
+    printf("LFO link: two slots' %ss a set distance apart\n", type);
+    g2am_engine * e = make_engine(1);
+
+    for (int slot = 0; slot < 2; slot++) {   // slot A the left, slot B the right
+        OK(e, g2am_module_add(e, slot, "fx", 1, "2-In"));
+        OK(e, g2am_param_set(e, slot, "fx", 1, 2, 0, 0));
+        OK(e, g2am_module_add(e, slot, "fx", 2, type));
+        OK(e, g2am_module_add(e, slot, "fx", 3, "2-Out"));
+        OK(e, g2am_cable_add(e, slot, "fx", 1, slot, 1, 2, 0));
+        OK(e, g2am_cable_add(e, slot, "fx", 2, 0, 1, 3, slot));
+    }
+    OK(e, g2am_performance_setting(e, "enabled_b", 1));
+    OK(e, g2am_commit(e));
+
+    REFUSED(e, g2am_lfo_link(e, 1, "fx", 1, 0, 0.5));   // a 2-In has no LFO
+    double same = side_difference(e);
+
+    printf("  in step: L-R %.5f\n", same);
+    CHECK(same < 1e-6, "two slots' %ss start apart: %g", type, same);
+
+    for (int i = 0; i < 3; i++) {
+        OK(e, g2am_lfo_link(e, 1, "fx", 2, 0, 0.5));
+    }
+    double apart = side_difference(e);
+
+    printf("  half a cycle apart: L-R %.5f\n", apart);
+    CHECK(apart > 0.01, "the link moved nothing: %g", apart);
+
+    for (int i = 0; i < 3; i++) {
+        OK(e, g2am_lfo_link(e, 1, "fx", 2, 0, 0.0));
+    }
+    double back = side_difference(e);
+
+    printf("  back in step: L-R %.5f\n", back);
+    CHECK(back < (apart / 10.0), "offset 0 left them apart: %g", back);
+    g2am_destroy(e);
+
+    g2am_engine * plain = make_engine(0);
+
+    OK(plain, g2am_module_add(plain, 0, "fx", 2, "Flanger"));
+    OK(plain, g2am_module_add(plain, 1, "fx", 2, "Flanger"));
+    REFUSED(plain, g2am_lfo_link(plain, 1, "fx", 2, 0, 0.5));   // extensions off
+    g2am_destroy(plain);
+}
+
+// Mean level, dB, of Out 1 with a 15 kHz sine (amplitude 0.25) on In 1/2
+static double level_at(g2am_engine * e, double hz, int noise) {
+    float  l[BLOCK], r[BLOCK], in[BLOCK];
+    float * out[2] = {l, r};
+    const float * ins[2] = {in, in};
+    double so = 0.0, si = 0.0;
+    long   k = 0;
+
+    srand(1);
+
+    for (int b = 0; b < 300; b++) {
+        for (int i = 0; i < BLOCK; i++, k++) {
+            in[i] = noise ? 0.25f * ((2.0f * rand() / (float)RAND_MAX) - 1.0f) : 0.25f * (float)sin(2.0 * M_PI * hz * (double)k / RATE);
+        }
+        g2am_render(e, ins, 2, out, 2, BLOCK);
+
+        if (b >= 100) {
+            for (int i = 0; i < BLOCK; i++) {
+                so += (double)l[i] * l[i];
+                si += (double)in[i] * in[i];
+            }
+        }
+    }
+
+    return 10.0 * log10(so / si);
+}
+
+static void test_output_stage_and_fixed(void) {
+    printf("the G2's output stage, and fixed point\n");
+    g2am_engine * e = make_engine(0);
+
+    OK(e, g2am_module_add(e, 0, "fx", 1, "2-In"));
+    OK(e, g2am_module_add(e, 0, "fx", 2, "Phaser"));
+    OK(e, g2am_module_add(e, 0, "fx", 3, "2-Out"));
+    OK(e, g2am_param_set(e, 0, "fx", 1, 2, 0, 0));
+    OK(e, g2am_cable_add(e, 0, "fx", 1, 0, 1, 3, 0));
+    OK(e, g2am_commit(e));
+
+    double on15  = level_at(e, 15000.0, 0) - level_at(e, 440.0, 0);
+
+    OK(e, g2am_set_output_stage(e, 0));
+    double off15 = level_at(e, 15000.0, 0) - level_at(e, 440.0, 0);
+
+    printf("  15 kHz against 440 Hz: output stage on %+.2f dB, off %+.2f dB\n", on15, off15);
+    CHECK((on15 < off15 - 0.2) && (fabs(off15) < 0.1), "output stage: on %+.2f, off %+.2f", on15, off15);
+
+    // Two engines, identical but for fixed point, the same noise through a Phaser with its feedback up: they
+    // differ by the 24-bit step's noise, nowhere near a change of sound
+    g2am_engine * twin[2];
+    double        diff = 0.0, sig = 0.0;
+
+    for (int t = 0; t < 2; t++) {
+        twin[t] = make_engine(0);
+        OK(twin[t], g2am_module_add(twin[t], 0, "fx", 1, "2-In"));
+        OK(twin[t], g2am_module_add(twin[t], 0, "fx", 2, "Phaser"));
+        OK(twin[t], g2am_module_add(twin[t], 0, "fx", 3, "2-Out"));
+        OK(twin[t], g2am_param_set(twin[t], 0, "fx", 1, 2, 0, 0));
+        OK(twin[t], g2am_param_set(twin[t], 0, "fx", 2, 2, 0, 120));
+        OK(twin[t], g2am_cable_add(twin[t], 0, "fx", 1, 0, 1, 2, 0));
+        OK(twin[t], g2am_cable_add(twin[t], 0, "fx", 2, 0, 1, 3, 0));
+        OK(twin[t], g2am_set_fixed_point(twin[t], t));
+        OK(twin[t], g2am_commit(twin[t]));
+    }
+    srand(1);
+
+    for (int b = 0; b < 300; b++) {
+        float         in[BLOCK], out0[BLOCK], out1[BLOCK], spare[BLOCK];
+        const float * ins[2] = {in, in};
+        float *       o0[2]  = {out0, spare};
+        float *       o1[2]  = {out1, spare};
+
+        for (int i = 0; i < BLOCK; i++) {
+            in[i] = 0.25f * ((2.0f * rand() / (float)RAND_MAX) - 1.0f);
+        }
+        g2am_render(twin[0], ins, 2, o0, 2, BLOCK);
+        g2am_render(twin[1], ins, 2, o1, 2, BLOCK);
+
+        for (int i = 0; (b >= 100) && (i < BLOCK); i++) {
+            diff += (double)(out1[i] - out0[i]) * (out1[i] - out0[i]);
+            sig  += (double)out0[i] * out0[i];
+        }
+    }
+    double below = 10.0 * log10(sig / (diff + 1e-30));
+
+    printf("  Phaser on noise, fixed against floating: the difference is %.1f dB below the signal\n", below);
+    CHECK((below > 80.0) && (diff > 0.0), "fixed point: difference %.1f dB below the signal", below);
+    g2am_destroy(twin[0]);
+    g2am_destroy(twin[1]);
+    REFUSED(e, g2am_set_fixed_point(e, 2));
+    g2am_destroy(e);
+}
+
 static void test_module_list(void) {
     printf("the module list and verdicts\n");
     g2am_engine * e = make_engine(0);
@@ -453,6 +665,10 @@ int main(void) {
     test_variations();
     test_performance();
     test_fx_input();
+    test_latency();
+    test_lfo_link("Flanger");
+    test_lfo_link("Phaser");
+    test_output_stage_and_fixed();
     test_module_list();
     printf("%d checks, %d failed\n", sChecks, sFailures);
     return (sFailures == 0) ? 0 : 1;

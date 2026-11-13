@@ -21,3 +21,12 @@
 
 Edits are checked when they are called, against a shadow of which module type sits at each index, and applied in
 order under the database's write lock at commit, so a commit cannot fail part way.
+7. **Latency.** Measured, not derived: an impulse through 2-In -> 2-Out comes out 31 frames late at 44.1 and
+   48 kHz, and on the same frame at 88.2 kHz and above, where the graph runs at the device's rate. `make test`
+   measures it at each rate against `g2am_latency()`. It is worked out from the rate and the economy setting asked
+   for - the audio thread applies a change of economy at its next block, so asking the engine would lag.
+8. **LFO links are made on the audio thread.** The engine renders one slot's whole block, then the next; a link
+   copied from a control thread mid-block can catch slot A a block ahead of slot B, and the Phaser's sides came out
+   a block apart (ModAlike's test caught it). So `g2am_lfo_link()` only posts the request, and `g2am_render()`
+   makes it before the block, when both slots stand at the same sample - re-making it on 8 blocks, so a patch
+   rebuild that resets the state in between does not lose it, and waiting while a module has not started.
